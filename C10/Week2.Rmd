@@ -1,0 +1,370 @@
+---
+title: "Capstone Week2: Exploratory Analysis and Next steps"
+author: "Duy Nguyen"
+date: "1/3/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+require(quanteda)
+require(ggplot2)
+require(kableExtra)
+require(tokenizers)
+require(dplyr)
+set.seed(1000)
+```
+## Introduction
+
+The first step in building a predictive model for text is understanding the distribution and relationship between the words, tokens, and phrases in the text. The goal of this task is to understand the basic relationships you observe in the data and prepare to build your first linguistic models. This report is organised in following sections:  
+(1) Getting the data and first analyses  
+(2) Devide the data to train and test set  
+(3) Preprocessing and tokenise  
+(4) Analyse the N-grams of the train dataset  
+(5) Language coverage and detection  
+(6) Next steps  
+
+## Getting the data
+
+Three data files corresponding to blog, news, and tweet were evaluated. The file size, number of words and lines are reported in the following table as well as figures. As shown, each dataset is pretty large with the number of words up to the order of milions. This makes analysing the entire dataset time consuming. Further work will be conducted based on a subset of these datasets
+
+
+```{r downloadfile, cache=TRUE, echo=FALSE, message=FALSE, warning=FALSE}
+
+cntblg <- file("/Users/QD/datascience/C10/final/en_US/en_US.blogs.txt","r")
+blg <- readLines(cntblg)
+close(cntblg)
+cntnew <- file("/Users/QD/datascience/C10/final/en_US/en_US.news.txt","r")
+new <- readLines(cntnew)
+close(cntnew)
+cnttwt <- file("/Users/QD/datascience/C10/final/en_US/en_US.twitter.txt","r")
+twt <- readLines(cnttwt)
+close(cnttwt)
+numword <- c(sum((nchar(blg) - nchar(gsub(' ','',blg))) + 1),sum((nchar(new) - nchar(gsub(' ','',new))) + 1),sum((nchar(twt) - nchar(gsub(' ','',twt))) + 1))
+lineword <- data.frame(Lines = c(length(blg),length(new),length(twt)), Word = numword, row.names = c("Blog", "News", "Tweet"))
+kable_styling(kable(lineword, full_width = FALSE))
+```
+
+```{r size,cache=TRUE, echo=FALSE, message=FALSE, warning=FALSE}
+filesize <- data.frame(Size = c(format(object.size(blg), units = "Mb"),format(object.size(new),units = "Mb"),format(object.size(twt),units = "Mb")), row.names = c("Blog", "News", "Tweet"))
+kable_styling(kable(filesize, full_width = FALSE))
+
+```
+
+```{r plottherawstat,cache=TRUE, echo=FALSE, message=FALSE, warning=FALSE}
+require(reshape2)
+lineword <- cbind(lineword, Type = c("Blog", "News", "Tweet"))
+lineword <- melt(lineword, id.vars = 'Type')
+ggplot(lineword, aes(x = Type, y = value, fill = Type)) + facet_wrap(~variable, nrow = 1) + geom_bar(stat = 'identity', position = 'dodge') + ylab("Number of words and lines")
+```
+
+## Create training, cross validation and test set
+
+As reported, the size of the datasets is large. This work choose to work on a random 10% subset of the blog and news datasets and 5% of the tweet dataset. These subsets are combined to one single dataset and devide to:  
+(i) train set: 60%  
+(ii) cross validation: 20%  
+(iii) test: 20%  
+
+```{r devideset,cache=TRUE, echo=FALSE, message=FALSE, warning=FALSE}
+
+set.seed(1000)
+# Take 10%, 10%, and 5% of the original blog, news, and tweet data, respectively
+samplingrate <- c(0.2,0.2,0.1)
+trainsize <- 0.6
+crosssize <- 0.2
+testsize <- 0.2
+
+
+
+blg <- sample(blg, length(blg)*samplingrate[1])
+new <- sample(new, length(new)*samplingrate[2])
+twt <- sample(twt, length(twt)*samplingrate[3])
+rawdata <- rbind(blg,new,twt)
+
+smp_size <- floor(trainsize * length(rawdata))
+train_ind <- sample(seq_len(length(rawdata)), size = smp_size)
+cross_ind <- sample(seq_len(length(rawdata))[-train_ind], size = floor(crosssize * length(rawdata)))
+
+traindata <- rawdata[train_ind]
+crossdata <- rawdata[cross_ind]
+testdata <- rawdata[-c(train_ind,cross_ind)]
+
+blg <- NULL
+new <- NULL
+twt <- NULL
+
+```
+
+## Tokenizing and preprocessing
+
+Preprocessing to clean the corpus and tokenizing, i.e. devide the text to tokens of words, are an important step in natural language processing. This work relies on the package "quanteda" to process the dataset.
+
+The quanteda package provides a powerful tool to remove:
+- punction
+- url
+- number
+- symbol
+- twitter hashtag
+- hyphens
+
+These steps are done in a single tokens command and return an object of token object.   
+The stopword, i.e. words that are too common, were not removed. This is appropriate as the purpose of this project is to predict the next word.   
+The list of profanity words in english is downloaded and removed after tokenising.  
+
+## First looks at N-grams
+
+For this train subset (6% of the original dataset), the number of n-grams are stil large. This motivates other steps in compressing the n-grams table. One possiblity is removing singletons, i.e. terms that occur only once in the corpus. As seen, the size of the n-grams are reduced significantly. The use of this processing step, however, needs to be further evaluated when building the predicting algorithm.  
+
+The 20 most common unigram, bigram, trigram and their frequency as percentage, i.e. their frequency devided by the total frequency of all relevant n-gram terms, are shown in the following figures. Unsurprisingly, these terms are mostly stopwords. In the case of comparing the similarity between texts, this ngrams with stopword remained might not be useful. On the contrary, predicting the next word should retain the stopwords since it is what people types in most occasions.
+
+
+```{r tokenize,cache=F, echo=FALSE, message=FALSE, warning=FALSE}
+# This task takes time so put it to a separate chunk
+# Tokenise the train dataset
+datatotoken <- traindata
+tkcdata <- tokens(char_tolower(datatotoken), what = "word", remove_punct = TRUE, remove_url = TRUE, remove_numbers = TRUE, remove_symbols = TRUE, remove_twitter = TRUE, remove_hyphens = TRUE)
+
+#sapply(tkcdata, function(i) {
+#    iconv(i,from = "UTF-8", to = "ASCII")
+#      i <- i[!is.na(i)]
+#}
+#)
+
+
+```
+
+```{r removeprofanity,cache=F, echo=FALSE, message=FALSE, warning=FALSE}
+# Profanity word list
+urlbw<-"https://raw.githubusercontent.com/shutterstock/List-of-Dirty-Naughty-Obscene-and-Otherwise-Bad-Words/master/en"
+if (!file.exists("en_bws.txt")){download.file(urlbw, destfile="en_bws.txt", method = "curl")}
+profane <- read.table("en_bws.txt", header=FALSE, sep="\n", strip.white=TRUE)
+profane <- as.character(profane[[1]])
+tkcdata <- tokens_remove(tkcdata,profane)
+tkcdata <- tokens_select(tkcdata, pattern = c('*www*'),selection = 'remove')
+#tkcdata <- tokens_select(tkcdata, pattern = stopwords('en'),selection = 'remove')
+
+```
+
+```{r savingtokens,cache=F, echo=FALSE, message=FALSE, warning=FALSE, eval = T}
+save(tkcdata,file = "./traintokens.RData")
+```
+
+
+
+```{r ngrams,cache=F, echo=FALSE, message=FALSE, warning=FALSE, eval=T}
+# Create n-grams from the token object
+
+if (FALSE) {
+      
+
+tk1g <- tokens_ngrams(tkcdata,n=1)
+tk2g <- tokens_ngrams(tkcdata,n=2)
+tk3g <- tokens_ngrams(tkcdata,n=3)
+tk4g <- tokens_ngrams(tkcdata,n=4)
+
+
+
+# Create n-grams corpus
+tk1g <- dfm(tk1g)
+tk2g <- dfm(tk2g)
+tk3g <- dfm(tk3g)
+tk4g <- dfm(tk4g)
+
+
+# Collapse to a vector
+tk1g <- sort(colSums(tk1g, dims =1),decreasing = TRUE)
+tk2g <- sort(colSums(tk2g, dims =1),decreasing = TRUE)
+tk3g <- sort(colSums(tk3g, dims =1),decreasing = TRUE)
+tk4g <- sort(colSums(tk4g, dims =1),decreasing = TRUE)
+}
+tk5g <- tokens_ngrams(tkcdata,n=5)
+tk5g <- dfm(tk5g)
+tk5g <- sort(colSums(tk5g, dims =1),decreasing = TRUE)
+```
+
+## 
+```{r ngramstat,cache=F, echo=FALSE, message=FALSE, warning=FALSE, eval=F}
+# Calculate frequency
+unigram = tk1g[1:20]/sum(tk1g)
+bigram = tk2g[1:20]/sum(tk2g)
+trigram = tk3g[1:20]/sum(tk3g)
+fourgram <- tk4g[1:20]/sum(tk4g)
+#fivegram <- tk5g[1:20]/sum(tk5g)
+# Calculate languqe coverage
+langco <- cumsum(tk1g/sum(tk1g))
+
+sizegram <- c(format(object.size(tk1g), units = "Mb"),format(object.size(tk2g), units = "Mb"),format(object.size(tk3g), units = "Mb"),format(object.size(tk4g), units = "Mb"))
+numgram <- c(length(tk1g),length(tk2g),length(tk3g),length(tk4g))
+kable_styling(kable(data.frame(Size = sizegram, Ngrams = numgram, row.names = c("Unigram","Bigram","Trigram","Fourgram")),full_width = FALSE))
+
+```
+
+
+```{r removesingleton,cache=F, echo=FALSE, message=FALSE, warning=FALSE,eval=T}
+if (FALSE) {
+tk1g <- tk1g[tk1g[]!=1]
+tk2g <- tk2g[tk2g[]!=1]
+tk3g <- tk3g[tk3g[]!=1]
+tk4g <- tk4g[tk4g[]!=1]
+
+# Do not remove singletons for 5 grams
+sizegram <- c(format(object.size(tk1g), units = "Mb"),format(object.size(tk2g), units = "Mb"),format(object.size(tk3g), units = "Mb"),format(object.size(tk4g), units = "Mb"))
+numgram <- c(length(tk1g),length(tk2g),length(tk3g),length(tk4g))
+kable_styling(kable(data.frame(Size = sizegram, Ngrams = numgram, row.names = c("Unigram","Bigram","Trigram","Fourgram")), full_width = FALSE, caption = "Removed singletons"))
+}
+
+tk5g <- tk5g[tk5g[]!=1]
+
+
+
+```
+
+
+```{r,cache=F, echo=FALSE, message=FALSE, warning=FALSE, eval=F}
+
+barplot(unigram*100,  ylab = "Normalised frequency (%)", las=2)
+
+barplot(bigram*100,  ylab = "Normalised frequency (%)", las=2)
+
+barplot(trigram*100,  ylab = "Normalised frequency (%)", las=2)
+
+barplot(fourgram*100,  ylab = "Normalised frequency (%)", las=2)
+
+plot(langco, type = "l", xlab =  "Numer of unique words", ylab = "Coverage")
+
+```
+
+### Languaqe coverage by unigrams
+The percent coverage of unique words for a certain text is shown in the figure above. It is interesting that it just need a couple of thousands word to cover 50% of the text. To cover more than 90%, a much larger number of unique words are needed. This provide a useful information when predicting the word to balance the accuracy and the scalability of the algorithm.
+
+An possible way to increase the language coverage is to use stemword, i.e. words in different forms e.x. going & go, will be grouped as one unigram.
+
+### Further processing: Detect foreign language 
+
+A possible solution could be using the "cld2" packing with Google language detection engine. An example is shown below. It works ok but far from perfect. It can be good to try on the tokenised object if desired. Another possibility is to convert to unicode to remove some sign-based characters or similar.
+
+```{r detectlang,cache=F, echo=TRUE, message=FALSE, warning=FALSE, eval=F}
+require(cld2)
+detect_language(c("This is English", "jag bor i sverige"))
+
+```
+
+```{r savingdata,cache=F, echo=TRUE, message=FALSE, warning=FALSE, eval=T}
+
+require(data.table)
+if (FALSE) {
+# Unigram
+
+tk1g <- data.table(names(tk1g),tk1g,stringsAsFactors=FALSE)
+names(tk1g) <- c("n","freq")
+rownames(tk1g) <- NULL
+setkey(tk1g,n)
+traintk1g <- tk1g
+traintk1g$n <- iconv(traintk1g$n,from = "UTF-8", to = "ASCII")
+traintk1g <- traintk1g[!is.na(traintk1g$n),]
+save(traintk1g, file = "./traintk1g.RData")
+
+# Bigrams
+temp <- data.frame(names(tk2g),tk2g,stringsAsFactors=FALSE)
+ii <- strsplit(as.character(temp[,1]),"_")
+            te <- sapply(ii, function(j) length(j) >= 3)
+            ii <- ii[-which(te==TRUE)]
+            temp <- temp[-which(te==TRUE),]
+            nn <- data.table(matrix(unlist(ii), nrow=length(ii), byrow=T),stringsAsFactors=FALSE)
+            #c1 <- apply(nn[,1:2],1,function(i) paste(i[1],i[2],collapse = " "))
+            tk2g <- data.table(nn,freg=temp[,2],stringsAsFactors=FALSE)
+            names(tk2g) <- c("n1","n","freq")
+            rownames(tk2g) <- NULL
+            setkey(tk2g,n1)
+            traintk2g <- tk2g
+      traintk2g$n <- iconv(traintk2g$n,from = "UTF-8", to = "ASCII")
+      traintk2g$n1 <- iconv(traintk2g$n1,from = "UTF-8", to = "ASCII")
+      traintk2g <- traintk2g[(!is.na(traintk2g$n))&(!is.na(traintk2g$n1)),]
+save(traintk2g, file = "./traintk2g.RData")
+
+# Trigram
+temp <- data.frame(names(tk3g),tk3g,stringsAsFactors=FALSE)
+ii <- strsplit(as.character(temp[,1]),"_")
+            te <- sapply(ii, function(j) length(j) >= 4)
+            ii <- ii[-which(te==TRUE)]
+            temp <- temp[-which(te==TRUE),]
+            nn <- data.table(matrix(unlist(ii), nrow=length(ii), byrow=T),stringsAsFactors=FALSE)
+            c1 <- apply(nn[,1:2],1,function(i) paste(i[1],i[2],collapse = " "))
+            tk3g <- data.table(nminus1=c1,n = nn[,3],freg=temp[,2],stringsAsFactors=FALSE)
+            names(tk3g) <- c("n1","n","freq")
+            rownames(tk3g) <- NULL
+            setkey(tk3g,n1)
+            traintk3g <- tk3g
+            traintk3g$n <- iconv(traintk3g$n,from = "UTF-8", to = "ASCII")
+      traintk3g$n1 <- iconv(traintk3g$n1,from = "UTF-8", to = "ASCII")
+      traintk3g <- traintk3g[(!is.na(traintk3g$n))&(!is.na(traintk3g$n1)),]
+save(traintk3g, file = "./traintk3g.RData")
+
+# Fourgram
+temp <- data.frame(names(tk4g),tk4g,stringsAsFactors=FALSE)
+print(head(temp))
+ii <- strsplit(as.character(temp[,1]),"_")
+            te <- sapply(ii, function(j) length(j) >= 5)
+            ii <- ii[-which(te==TRUE)]
+            temp <- temp[-which(te==TRUE),]
+            nn <- data.table(matrix(unlist(ii), nrow=length(ii), byrow=T),stringsAsFactors=FALSE)
+            print(head(nn))
+            c1 <- apply(nn[,1:3],1,function(i) paste(i[1],i[2],i[3],collapse = " "))
+            print(head(c1))
+            tk4g <- data.table(nminus1=c1,n = nn[,4],freg=temp[,2],stringsAsFactors=FALSE)
+            print(head(tk4g))
+            names(tk4g) <- c("n1","n","freq")
+            rownames(tk4g) <- NULL
+            setkey(tk4g,n1)
+            traintk4g <- tk4g
+            traintk4g$n <- iconv(traintk4g$n,from = "UTF-8", to = "ASCII")
+      traintk4g$n1 <- iconv(traintk4g$n1,from = "UTF-8", to = "ASCII")
+      traintk4g <- traintk4g[(!is.na(traintk4g$n))&(!is.na(traintk4g$n1)),]
+      
+save(traintk4g, file = "./traintk4g.RData")
+}
+
+# 5-grams
+temp <- data.frame(names(tk5g),tk5g,stringsAsFactors=FALSE)
+print(head(temp))
+ii <- strsplit(as.character(temp[,1]),"_")
+            te <- sapply(ii, function(j) length(j) >= 6)
+            ii <- ii[-which(te==TRUE)]
+            temp <- temp[-which(te==TRUE),]
+            nn <- data.table(matrix(unlist(ii), nrow=length(ii), byrow=T),stringsAsFactors=FALSE)
+            print(head(nn))
+            c1 <- apply(nn[,1:4],1,function(i) paste(i[1],i[2],i[3],i[4],collapse = " "))
+            print(head(c1))
+            tk5g <- data.table(nminus1=c1,n = nn[,5],freg=temp[,2],stringsAsFactors=FALSE)
+            print(head(tk5g))
+            names(tk5g) <- c("n1","n","freq")
+            rownames(tk5g) <- NULL
+            setkey(tk5g,n1)
+            traintk5g <- tk5g
+            traintk5g$n <- iconv(traintk5g$n,from = "UTF-8", to = "ASCII")
+      traintk5g$n1 <- iconv(traintk5g$n1,from = "UTF-8", to = "ASCII")
+      traintk5g <- traintk5g[(!is.na(traintk5g$n))&(!is.na(traintk5g$n1)),]
+      #setkey(tk5g,n1)
+save(traintk5g, file = "./traintk5g.RData")
+
+#write.csv(tk1g, file = "crosstk1g.csv")
+#write.csv(tk2g, file = "crosstk2g.csv")
+#write.csv(tk3g, file = "crosstk3g.csv")
+#save(tk1g, file = "./crosstk1g.RData")
+#save(tk2g, file = "./crosstk2g.RData")
+#save(tk3g, file = "./crosstk3g.RData")
+
+``` 
+## NEXT STEPS:
+
+(1) Find a good way to store the n-grams. One possiblity is to use hash-tables to ensure a constant time when searching for terms.  
+(2) Developing a simple n-gram model to predict the next word  
+(3) Apply Katz and stupid backoff models to handle unseen n-grams  
+(4) Determin an appropriate way to characterise the accuracy of the prediction model  
+(5) Using the cross validation to improve the models by fitting the discount variable of backoff models  
+(6) Further requests according to the capstone project  
+
+## APPENDIX: CODES USED IN THIS REPORT
+
+```{r, ref.label=knitr::all_labels(),echo=TRUE,eval=FALSE}
+``

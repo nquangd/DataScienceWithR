@@ -1,0 +1,83 @@
+---
+title: 'Assignment Regression Model: Automatic or Manual gearbox?'
+author: "Duy Nguyen"
+output:
+  html_document: default
+  pdf_document: default
+  word_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+require(dplyr)
+require(ggplot2)
+require(kableExtra)
+```
+
+## Introduction
+This analysis will look at the mtcars dataset and answering two questions of interest:  
+(1) Is an automatic or manual transmission better for MPG   
+(2) Quantify the MPG difference between automatic and manual transmissions  
+
+## Exploratory data analysis
+The correlations between MPG and other variables show that all variables have influence on the fuel consumptions. As expected, cyl, disp, hp, wt, and carb have a negative relationship with MPG. At the fist glance, tranmission (AM where automatic = 0, manual = 1) seems to be in a positve relationship with MPG.  
+The violin plot comparing the types of tranmission regarding the fuel consumption show that, on average, the MANUAL cars consume more fuel than the AUTOMATIC cars. In fact, this is influenced by other variables and will be further addressed by linear regression model.
+
+```{r, warning = FALSE}
+library(datasets)
+
+data(mtcars)
+kable_styling(kable(round(cor(mtcars$mpg,mtcars[,-1]),3),caption = "Correlation between MPG and other variables"))
+
+mtcars$am <- as.factor(mtcars$am)
+levels(mtcars$am) = c("Automatic","Manual")
+
+ggplot(mtcars, aes(y=mpg, x = factor(am), fill = factor(am), color = factor(am))) + geom_violin() + labs(x= "Tranmission", y = "MPG", title = "Comparing automatic and manual regarding fuel consumption (mpg)")
+
+```
+
+
+## Hypothesis testing
+T test for automatic and manual gear shows that with the p-value less than 5% and the confidence interval do not contain 0, we would reject the null hypothesis. This mean that the manual seems to consume more fuel than the automatic.  
+```{r, warning = FALSE}
+
+t.test(mtcars$mpg~as.factor(mtcars$am))
+
+```
+## Regression model
+### Use tranmission type as the only predictor
+To answer the two primary questions, the analysis will, in the first attempt, model the MPG with only the type of tranmission as a linear predictor. The summary of the regression shows that with P-value < 0.05, we can reject the NULL hypothesis. This means that the type of tranmission has statiscal significant influence on MPG. The coefficient of MANUAL is +7.2 which indicates that MANUAL has greater postive effect on MPG. In other words, MANUAL cars consume more fuel.    
+The explained variance by this linear model, however, is just about 36% (indicated by the R squared). This motivates the need for further model selection considering adjusting the effects of other variables. 
+
+```{r, warning = FALSE}
+
+fit <- lm(mpg~factor(am), data = mtcars)
+(summary(fit))
+```
+### Model selection by adjusting the effect of other variables
+Model development could be done in different ways in R, this analysis will employ the function "step" to find the best fitted linear model.  
+As seen, the model with three variables **wt**, **qsec**, **am** can explain 85% percent of the variance in the dataset. The P-value are less than 5% so we would reject the NULL hypothesis. The residual plot shows that the residual do not have any pattern. The Q_Q plot shows good agreement between theoretical quantiles and the standardised residuals.    
+
+The analysis will choose this as the final model. However, it should be noted that the model could be further developed to address uncertainty by considering the interaction between variables.
+
+
+```{r, warning = FALSE}
+#mtcars$cyl <- as.factor(mtcars$cyl)
+mtcars$vs <- as.factor(mtcars$vs)
+mtcars$gear <- as.factor(mtcars$gear)
+mtcars$carb <- as.factor(mtcars$carb)
+fit2 <- step(lm(mpg~.,data = mtcars), trace = 0)
+summary(fit2)
+par(mfcol = c(2,2))
+plot(fit2)
+```
+
+### Quantifying the difference between MANUAL and AUTOMATIC gearbox
+From the output of the linear model with three regressors **wt**, **qsec**, **am** , it is shown that the MANUAL consume about **3** mpg more than the AUTOMATIC cars
+
+## CONCLUSION
+
+The MPG is unsuprisingly influenced by all variables. However, a linear model with three variables **wt**, **qsec**, **am** can explain 85% of the variance.  
+Answer to the two questions:  
++ AUTOMATIC is better than MANUAL regarding fuel consumption (MPG)  
++ AUTOMATIC consumes about 3 mpg less than MANUAL (results extracted from linear model)
